@@ -1,0 +1,103 @@
+model new
+model largestrain on
+model configure plugins
+zone cmodel load 'cmodelmc_123d007.dll'  ;  'cmodel123d007.dll' ; 
+zone create brick  p 1 0.6 0 0 p 2 0 0.6 0 p 3 0 0 0.6 size 1 1 1 ;三轴试验尺寸：0.6*0.6*0.6 m
+;zone create brick p 0 -0.1 -0.1 0.6 p 1 0.7 -0.1 0.6 p 2 -0.1 0.7 0.6 p 3 -0.1 -0.1 0.7  size 1 1 1 group 'ding'
+;zone create brick p 0 -0.1 -0.1 -0.1 p 1 0.7 -0.1 -0.1 p 2 -0.1 0.7 -0.1 p 3 -0.1 -0.1 0  size 1 1 1 group 'ding'
+
+zone cmodel assign mc_123-debug  ; mohr-coulomb  ;  123-debug ; mohr-coulomb  ; elastic; 123-debug ;mohr-coulomb  ;
+zone property cohesion 110e3 friction 48.5 fricDel 0.0 ratiofail 0.79 ke 704 ne 0.38 kb 303 mb 0.18 kur 844.8
+;zone property bulk 1.331e6 shear 2.027e6 cohesion 1.1e5 friction 48.5 ;tension 2e5  ;dilation 10
+;zone property bulk 1.331e6 shear 2.027e6
+;zone cmodel assign mohr-coulomb  range group 'ding'
+;zone property bulk 1e13 shear 1e13  cohesion 1e13 tension 1e13 range group 'ding'
+
+def sigma3 ;定义一个sigma变量便于进行多工况计算
+  sigma3=-600e3
+end
+@sigma3
+;设置初始应力
+
+;model duncan 
+zone face skin
+zone attach by-face
+;zone gridpoint fix velocity-z 0 range group 'Bottom3'
+;zone gridpoint fix velocity-z 0 range group 'Top1'
+;zone gridpoint fix velocity-z 0 range group 'Bottom'
+zone gridpoint fix velocity 0 0 0 range  group 'Bottom' ;模型底部边界的竖直向速度约束
+
+zone gridpoint fix velocity-x 0 range  group 'West'
+zone gridpoint fix velocity-x 0 range  group 'East'
+zone gridpoint fix velocity-y 0 range  group 'North'
+zone gridpoint fix velocity-y 0 range  group 'South'
+;zone face apply stress-zz = [sigma3] range group 'Top'
+zone face apply stress-normal = [sigma3] range group 'West'
+zone face apply stress-normal = [sigma3] range group 'East'
+zone face apply stress-normal = [sigma3] range group 'North'
+zone face apply stress-normal = [sigma3] range group 'South'
+zone face apply stress-normal = [sigma3] range group 'Top'
+;zone face apply stress-normal = [sigma3] range group 'Bottom'
+zone initialize stress-zz [sigma3]
+zone initialize stress-yy [sigma3]
+zone initialize stress-xx [sigma3]
+;cycle 2
+model solve ;得到加载前的初始应力 step 200 ; 
+call 'show_prin.py'
+
+
+zone gridpoint initialize displacement-x 0
+zone gridpoint initialize displacement-y 0
+zone gridpoint initialize displacement-z 0
+zone gridpoint initialize velocity-x 0
+zone gridpoint initialize velocity-y 0
+zone gridpoint initialize velocity-z 0
+
+;table '1' lable 'loads' ;建立一个空表，用来保存荷载-沉降曲线
+;第1次加卸载
+def load1
+  p_gp = gp.near(0,0,0.6)
+  z_gp=zone.near(0,0,0.6)
+  loop n(1,50)
+    zss_load= sigma3 - float(n)*20e3  ;加载1000kPa
+    command
+      zone face apply stress-normal = [zss_load] range group 'Top'
+      model solve
+      ;call 'show_prin.py'
+    endcommand
+    z_dis1 = -1.0 *( gp.disp.z(p_gp)) / 0.6  ;得到应变
+    z_dis2 = -zone.strain.inc.zz(z_gp)
+    z_load = (sigma3 - zss_load)       ;得到主应力差
+    command
+      tab '1' add [z_dis1] [z_load]               ;分别保存应变和主应力差
+      tab '2' add [z_dis2] [z_load]
+    endcommand
+    ;out_string=string(z_dis)+','+string(z_load)
+    ;io.out(out_string)
+  end_loop
+end
+@load1
+
+def unload1
+  p_gp = gp.near(0,0,0.6)
+  z_gp=zone.near(0,0,0.6)
+  loop n(1,25)
+    zss_load= sigma3 -50*20e3 + float(n)*20e3  ;卸载500kPa
+    command
+      zone face apply stress-normal = [zss_load] range group 'Top'
+      model solve
+      call 'show_prin.py'
+    endcommand
+    z_dis1 = -1.0 *( gp.disp.z(p_gp)) / 0.6  ;得到应变
+    z_dis2 = -zone.strain.inc.zz(z_gp)
+    z_load = (sigma3 - zss_load)       ;得到主应力差
+    command
+      tab '3' add [z_dis1] [z_load]               ;分别保存应变和主应力差
+      tab '4' add [z_dis2] [z_load]
+    endcommand
+    ;out_string=string(z_dis)+','+string(z_load)
+    ;io.out(out_string)
+  end_loop
+end
+@unload1
+;model save '13-1.sav'
